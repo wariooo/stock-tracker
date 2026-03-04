@@ -1,20 +1,16 @@
 import crypto from "crypto";
+import * as cheerio from "cheerio";
 import type { CongressTrade, CongressChamber, TradeType } from "./types";
 import { writeCongressTrades, writeCongressMeta } from "./data-store";
 
-const HOUSE_URL =
-  "https://house-stock-watcher-data.s3-us-west-2.amazonaws.com/data/all_transactions.json";
-const SENATE_URL =
-  "https://senate-stock-watcher-data.s3-us-west-2.amazonaws.com/data/all_transactions.json";
-
-const TWO_YEARS_MS = 2 * 365 * 24 * 60 * 60 * 1000;
+const BASE_URL = "https://www.capitoltrades.com/trades";
 
 function normalizeTradeType(raw: string): TradeType {
   const lower = raw.toLowerCase().trim();
-  if (lower === "purchase" || lower === "buy") return "purchase";
-  if (lower === "sale (full)" || lower === "sell (full)") return "sale_full";
-  if (lower === "sale (partial)" || lower === "sell (partial)") return "sale_partial";
-  if (lower === "sale" || lower === "sell") return "sale";
+  if (lower.includes("buy") || lower.includes("purchase")) return "purchase";
+  if (lower.includes("sale") && lower.includes("full")) return "sale_full";
+  if (lower.includes("sale") && lower.includes("partial")) return "sale_partial";
+  if (lower.includes("sell") || lower.includes("sale")) return "sale";
   if (lower.includes("exchange")) return "exchange";
   return "purchase";
 }
@@ -26,104 +22,105 @@ function makeId(member: string, date: string, ticker: string | null, type: strin
 
 function cleanTicker(ticker: string | null | undefined): string | null {
   if (!ticker || ticker === "--" || ticker === "N/A" || ticker === "") return null;
-  // Remove leading/trailing whitespace and any non-standard chars
-  const cleaned = ticker.trim().replace(/[^A-Za-z0-9.\-]/g, "");
+  let cleaned = ticker.trim();
+  // Strip ":US" suffix from Capitol Trades tickers
+  cleaned = cleaned.replace(/:US$/i, "");
+  cleaned = cleaned.replace(/[^A-Za-z0-9.\-]/g, "");
   return cleaned || null;
 }
 
-interface HouseRaw {
-  representative: string;
-  transaction_date: string;
-  disclosure_date: string;
-  ticker: string;
-  asset_description: string;
-  type: string;
-  amount: string;
-  owner: string;
+function parseDate(raw: string): string {
+  // Capitol Trades dates look like "24 Feb2026" or "24 Feb 2026"
+  const cleaned = raw.trim().replace(/([A-Za-z])(\d)/g, "$1 $2");
+  const d = new Date(cleaned);
+  if (isNaN(d.getTime())) return raw.trim();
+  return d.toISOString().split("T")[0];
 }
 
-interface SenateRaw {
-  senator: string;
-  transaction_date: string;
-  disclosure_date: string;
-  ticker: string;
-  asset_description: string;
-  asset_type: string;
-  type: string;
-  amount: string;
-  owner: string;
+function parseChamber(text: string): CongressChamber {
+  const lower = text.toLowerCase();
+  if (lower.includes("senate")) return "senate";
+  return "house";
 }
 
-export async function fetchHouseTrades(): Promise<CongressTrade[]> {
-  const res = await fetch(HOUSE_URL);
-  if (!res.ok) throw new Error(`House fetch failed: ${res.status}`);
-  const raw: HouseRaw[] = await res.json();
-
-  const cutoff = Date.now() - TWO_YEARS_MS;
+export async function fetchCapitolTrades(pages = 3): Promise<CongressTrade[]> {
   const trades: CongressTrade[] = [];
   const seen = new Set<string>();
 
-  for (const r of raw) {
-    const txDate = r.transaction_date;
-    if (!txDate || new Date(txDate).getTime() < cutoff) continue;
-
-    const ticker = cleanTicker(r.ticker);
-    const id = makeId(r.representative, txDate, ticker, r.type);
-    if (seen.has(id)) continue;
-    seen.add(id);
-
-    trades.push({
-      id,
-      member: r.representative || "Unknown",
-      chamber: "house",
-      ticker,
-      assetDescription: r.asset_description || "",
-      assetType: "Stock",
-      tradeType: normalizeTradeType(r.type),
-      amount: r.amount || "",
-      transactionDate: txDate,
-      disclosureDate: r.disclosure_date || "",
-      owner: r.owner || "",
-      currentPrice: null,
-      priceChange1M: null,
+  for (let page = 1; page <= pages; page++) {
+    const url = `${BASE_URL}?page=${page}&pageSize=96`;
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; stock-tracker/1.0)",
+        Accept: "text/html",
+      },
     });
-  }
 
-  return trades;
-}
+    if (!res.ok) {
+      console.error(`Capitol Trades page ${page} failed: ${res.status}`);
+      break;
+    }
 
-export async function fetchSenateTrades(): Promise<CongressTrade[]> {
-  const res = await fetch(SENATE_URL);
-  if (!res.ok) throw new Error(`Senate fetch failed: ${res.status}`);
-  const raw: SenateRaw[] = await res.json();
+    const html = await res.text();
+    const $ = cheerio.load(html);
 
-  const cutoff = Date.now() - TWO_YEARS_MS;
-  const trades: CongressTrade[] = [];
-  const seen = new Set<string>();
+    const rows = $("table tbody tr");
+    if (rows.length === 0) break;
 
-  for (const r of raw) {
-    const txDate = r.transaction_date;
-    if (!txDate || txDate === "Unknown" || new Date(txDate).getTime() < cutoff) continue;
+    rows.each((_, row) => {
+      const tds = $(row).find("td");
+      if (tds.length < 8) return;
 
-    const ticker = cleanTicker(r.ticker);
-    const id = makeId(r.senator, txDate, ticker, r.type);
-    if (seen.has(id)) continue;
-    seen.add(id);
+      // Politician name and chamber
+      const memberEl = $(tds[0]);
+      const name = memberEl.find(".politician-name a, a h3").first().text().trim()
+        || memberEl.find("a").first().text().trim();
+      if (!name) return;
 
-    trades.push({
-      id,
-      member: r.senator || "Unknown",
-      chamber: "senate",
-      ticker,
-      assetDescription: r.asset_description || "",
-      assetType: r.asset_type || "Stock",
-      tradeType: normalizeTradeType(r.type),
-      amount: r.amount || "",
-      transactionDate: txDate,
-      disclosureDate: r.disclosure_date || "",
-      owner: r.owner || "",
-      currentPrice: null,
-      priceChange1M: null,
+      const chamberText = memberEl.html() || "";
+      const chamber = parseChamber(chamberText);
+
+      // Issuer and ticker
+      const issuerEl = $(tds[1]);
+      const company = issuerEl.find(".issuer-name a, a").first().text().trim()
+        || issuerEl.text().trim();
+      const tickerRaw = issuerEl.find(".issuer-ticker").text().trim()
+        || issuerEl.find("[class*='ticker']").text().trim();
+      const ticker = cleanTicker(tickerRaw);
+
+      // Transaction date
+      const dateText = $(tds[3]).text().trim();
+      const transactionDate = parseDate(dateText);
+
+      // Trade type
+      const typeEl = $(tds[6]);
+      const typeClass = typeEl.find("[class*='tx-type--']").attr("class") || "";
+      const typeText = typeEl.text().trim();
+      const tradeType = normalizeTradeType(typeClass || typeText);
+
+      // Amount
+      const amount = $(tds[7]).find(".trade-size").text().trim()
+        || $(tds[7]).text().trim();
+
+      const id = makeId(name, transactionDate, ticker, tradeType);
+      if (seen.has(id)) return;
+      seen.add(id);
+
+      trades.push({
+        id,
+        member: name,
+        chamber,
+        ticker,
+        assetDescription: company,
+        assetType: "Stock",
+        tradeType,
+        amount: amount || "",
+        transactionDate,
+        disclosureDate: "",
+        owner: "",
+        currentPrice: null,
+        priceChange1M: null,
+      });
     });
   }
 
@@ -131,10 +128,10 @@ export async function fetchSenateTrades(): Promise<CongressTrade[]> {
 }
 
 export async function pollCongressTrades(): Promise<{ house: number; senate: number }> {
-  const [houseTrades, senateTrades] = await Promise.all([
-    fetchHouseTrades(),
-    fetchSenateTrades(),
-  ]);
+  const allTrades = await fetchCapitolTrades(3);
+
+  const houseTrades = allTrades.filter((t) => t.chamber === "house");
+  const senateTrades = allTrades.filter((t) => t.chamber === "senate");
 
   await Promise.all([
     writeCongressTrades("house", houseTrades),

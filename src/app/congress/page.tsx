@@ -2,6 +2,7 @@ import { readCongressTrades, readCongressMeta } from "@/lib/data-store";
 import { Header } from "@/components/header";
 import { StatCard } from "@/components/stat-card";
 import { CongressTradesTable } from "@/components/congress-trades-table";
+import { AiInsightPanel } from "@/components/ai-insight-panel";
 import type { CongressTrade } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -37,8 +38,9 @@ export default async function CongressPage({
       tickerCounts.set(t.ticker, (tickerCounts.get(t.ticker) || 0) + 1);
     }
   }
-  const topTickers = Array.from(tickerCounts.entries())
-    .sort((a, b) => b[1] - a[1])
+  const topTickerEntries = Array.from(tickerCounts.entries())
+    .sort((a, b) => b[1] - a[1]);
+  const topTickers = topTickerEntries
     .slice(0, 3)
     .map(([t]) => t)
     .join(", ");
@@ -71,6 +73,24 @@ export default async function CongressPage({
           <StatCard
             label="Last Updated"
             value={meta?.lastUpdated ? new Date(meta.lastUpdated).toLocaleDateString() : "Never"}
+          />
+        </div>
+        <div className="mb-8">
+          <AiInsightPanel
+            type="congress"
+            data={{
+              totalTrades,
+              uniqueMembers,
+              topTickers: topTickerEntries.slice(0, 10).map(([t, c]) => ({ ticker: t, count: c })),
+              recentTrades: allTrades.slice(0, 20).map((t) => ({
+                member: t.member,
+                ticker: t.ticker,
+                assetDescription: t.assetDescription,
+                tradeType: t.tradeType,
+                amount: t.amount,
+                transactionDate: t.transactionDate,
+              })),
+            }}
           />
         </div>
         <CongressTradesTable

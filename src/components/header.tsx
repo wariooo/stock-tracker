@@ -3,24 +3,18 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import type { Entity } from "@/lib/entities";
 
 type ActiveTab = "13f" | "congress";
 
 interface HeaderProps {
-  entities?: Entity[];
   selectedCik?: string;
   activeTab?: ActiveTab;
 }
 
-export function Header({ entities, selectedCik, activeTab = "13f" }: HeaderProps) {
+export function Header({ selectedCik, activeTab = "13f" }: HeaderProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-
-  function handleEntityChange(cik: string) {
-    router.push(`/?cik=${cik}`);
-  }
 
   async function handleRefreshSEC() {
     setLoading(true);
@@ -67,25 +61,7 @@ export function Header({ entities, selectedCik, activeTab = "13f" }: HeaderProps
   return (
     <header className="border-b border-border bg-card-bg">
       <div className="mx-auto max-w-7xl px-4 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold">Stock Tracker</h1>
-          {activeTab === "13f" && entities && selectedCik && (
-            <>
-              <span className="text-sm text-muted">Source:</span>
-              <select
-                value={selectedCik}
-                onChange={(e) => handleEntityChange(e.target.value)}
-                className="text-sm text-muted bg-transparent border border-border rounded px-2 py-1 cursor-pointer hover:border-accent focus:outline-none focus:border-accent"
-              >
-                {entities.map((entity) => (
-                  <option key={entity.cik} value={entity.cik}>
-                    {entity.name}
-                  </option>
-                ))}
-              </select>
-            </>
-          )}
-        </div>
+        <h1 className="text-xl font-bold">Stock Tracker</h1>
         <div className="flex items-center gap-3">
           {message && (
             <span className="text-sm text-muted">{message}</span>

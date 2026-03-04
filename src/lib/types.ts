@@ -101,3 +101,14 @@ export interface CongressTradesResponse {
   members: string[];
   lastUpdated: string | null;
 }
+
+// --- AI Analysis ---
+
+export interface AiAnalysisRequest {
+  type: "stock" | "congress";
+  data: Record<string, unknown>;
+}
+
+export interface AiAnalysisResponse {
+  analysis: string | null;
+}
