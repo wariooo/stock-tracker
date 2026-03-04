@@ -2,7 +2,7 @@ import { readCache, writeCache } from "./data-store";
 import crypto from "crypto";
 
 const OLLAMA_URL = process.env.OLLAMA_URL || "http://ollama.railway.internal:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "mistral";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "phi3:mini";
 const TIMEOUT_MS = 120_000;
 
 function hashPrompt(prompt: string): string {
