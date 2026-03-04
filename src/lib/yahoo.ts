@@ -2,7 +2,14 @@ import YahooFinance from "yahoo-finance2";
 import type { PricePoint } from "./types";
 import { isValidCusip } from "./validate";
 
-const yahooFinance = new YahooFinance();
+// Lazy-init to avoid issues with module-level construction in some environments
+let _yahooFinance: InstanceType<typeof YahooFinance> | null = null;
+function getYahooFinance(): InstanceType<typeof YahooFinance> {
+  if (!_yahooFinance) {
+    _yahooFinance = new YahooFinance();
+  }
+  return _yahooFinance;
+}
 
 // Ticker cache with 24h TTL
 const TICKER_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -271,7 +278,7 @@ function stripSuffixes(name: string): string {
 async function yahooSearch(query: string): Promise<string | null> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result: any = await yahooFinance.search(query, {
+    const result: any = await getYahooFinance().search(query, {
       quotesCount: 10,
       newsCount: 0,
     });
@@ -368,7 +375,7 @@ export async function getQuote(ticker: string): Promise<QuoteData> {
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result: any = await yahooFinance.quote(ticker);
+    const result: any = await getYahooFinance().quote(ticker);
     const price = result?.regularMarketPrice ?? null;
 
     // Fetch 1 year of data and compute all period changes from it
@@ -379,7 +386,7 @@ export async function getQuote(ticker: string): Promise<QuoteData> {
     try {
       const start = new Date(Date.now() - 365 * 86400000);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const hist: any = await yahooFinance.chart(ticker, {
+      const hist: any = await getYahooFinance().chart(ticker, {
         period1: start,
         interval: "1d",
       });
@@ -419,7 +426,7 @@ export async function getQuote(ticker: string): Promise<QuoteData> {
     let industry: string | null = null;
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const summary: any = await yahooFinance.quoteSummary(ticker, {
+      const summary: any = await getYahooFinance().quoteSummary(ticker, {
         modules: ["assetProfile"],
       });
       industry = summary?.assetProfile?.industry ?? null;
@@ -431,7 +438,8 @@ export async function getQuote(ticker: string): Promise<QuoteData> {
     quoteCache.set(ticker, { value: quoteData, ts: Date.now() });
     return quoteData;
   } catch (e) {
-    console.warn(`[yahoo] getQuote failed for ${ticker}:`, e);
+    const msg = e instanceof Error ? `${e.message}\n${e.stack}` : String(e);
+    console.error(`[yahoo] getQuote FAILED for ${ticker}: ${msg}`);
     const fallback: QuoteData = { price: null, priceChange1M: null, priceChange6M: null, priceChange1Y: null, industry: null };
     return fallback;
   }
@@ -460,7 +468,7 @@ export async function getPriceHistory(
   try {
     const startDate = periodToDate(period);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result: any = await yahooFinance.chart(ticker, {
+    const result: any = await getYahooFinance().chart(ticker, {
       period1: startDate,
       interval: period === "1w" ? "1h" : "1d",
     });
