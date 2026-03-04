@@ -67,6 +67,14 @@ export default async function StockPage({
             <h1 className="text-xl font-bold">{ticker}</h1>
             <p className="text-sm text-muted">{issuer}</p>
           </div>
+          <a
+            href={`https://finance.yahoo.com/quote/${ticker}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ml-auto text-sm text-accent hover:underline"
+          >
+            View on Yahoo Finance &rarr;
+          </a>
         </div>
       </header>
       <main className="mx-auto max-w-7xl px-4 py-8 space-y-8">

@@ -7,11 +7,26 @@ import { fmtUsd, fmtPct, fmtShares } from "@/lib/format";
 import { StatusBadge } from "./status-badge";
 import { ScoreBadge } from "./score-badge";
 
-type SortKey = "ticker" | "issuer" | "industry" | "shares" | "valueUsd" | "portfolioPct" | "shareDelta" | "status" | "currentPrice" | "priceChange1M" | "buyScore";
+type SortKey = "ticker" | "issuer" | "industry" | "shares" | "valueUsd" | "portfolioPct" | "shareDelta" | "status" | "currentPrice" | "priceChange" | "estGain" | "buyScore";
+type PriceChangePeriod = "1M" | "6M" | "1Y";
+
+function getPriceChange(row: PortfolioRow, period: PriceChangePeriod): number | null {
+  switch (period) {
+    case "1M": return row.priceChange1M;
+    case "6M": return row.priceChange6M;
+    case "1Y": return row.priceChange1Y;
+  }
+}
+
+function estGain(row: PortfolioRow): number | null {
+  if (row.entryPrice == null || row.entryPrice <= 0 || row.currentPrice == null) return null;
+  return (row.currentPrice - row.entryPrice) / row.entryPrice;
+}
 
 export function PortfolioTable({ rows }: { rows: PortfolioRow[] }) {
   const [sortKey, setSortKey] = useState<SortKey>("valueUsd");
   const [sortAsc, setSortAsc] = useState(false);
+  const [priceChangePeriod, setPriceChangePeriod] = useState<PriceChangePeriod>("1M");
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -52,8 +67,11 @@ export function PortfolioTable({ rows }: { rows: PortfolioRow[] }) {
       case "currentPrice":
         cmp = (a.currentPrice ?? 0) - (b.currentPrice ?? 0);
         break;
-      case "priceChange1M":
-        cmp = (a.priceChange1M ?? 0) - (b.priceChange1M ?? 0);
+      case "priceChange":
+        cmp = (getPriceChange(a, priceChangePeriod) ?? 0) - (getPriceChange(b, priceChangePeriod) ?? 0);
+        break;
+      case "estGain":
+        cmp = (estGain(a) ?? 0) - (estGain(b) ?? 0);
         break;
       case "buyScore":
         cmp = (a.buyScore ?? 0) - (b.buyScore ?? 0);
@@ -76,6 +94,8 @@ export function PortfolioTable({ rows }: { rows: PortfolioRow[] }) {
     </th>
   );
 
+  const periods: PriceChangePeriod[] = ["1M", "6M", "1Y"];
+
   return (
     <>
     <div className="overflow-x-auto rounded-lg border border-border bg-card-bg shadow-sm">
@@ -85,17 +105,42 @@ export function PortfolioTable({ rows }: { rows: PortfolioRow[] }) {
             {th("Ticker", "ticker")}
             {th("Company", "issuer")}
             {th("Industry", "industry")}
-            {th("Shares", "shares")}
-            {th("% of Portfolio", "portfolioPct")}
-            {th("Price", "currentPrice")}
-            {th("1M Change", "priceChange1M")}
-            {th("Buy Score", "buyScore", "0-100 quantitative score.\n\n1M Price Momentum (40 pts): Based on 1-month price change, capped at ±50%.\n\nInstitutional Momentum (60 pts): Based on quarter-over-quarter share changes. New positions score max points.")}
-            {th("vs. Last Quarter", "shareDelta")}
-            {th("Status", "status")}
+            {th("Shares Held", "shares")}
+            {th("Weight (%)", "portfolioPct")}
+            {th("Price ($)", "currentPrice")}
+            {th("Est. Gain", "estGain", "Estimated unrealized gain/loss based on 13F entry price (filing value / shares) vs current market price")}
+            <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider select-none">
+              <span
+                className="cursor-pointer hover:text-foreground"
+                onClick={() => handleSort("priceChange")}
+              >
+                Price Chg
+                {sortKey === "priceChange" && (
+                  <span className="ml-1">{sortAsc ? "\u25B2" : "\u25BC"}</span>
+                )}
+              </span>
+              <span className="ml-2 inline-flex rounded-md border border-border text-[10px] overflow-hidden">
+                {periods.map((p) => (
+                  <button
+                    key={p}
+                    onClick={(e) => { e.stopPropagation(); setPriceChangePeriod(p); }}
+                    className={`px-1.5 py-0.5 ${priceChangePeriod === p ? "bg-accent text-white" : "hover:bg-gray-100"}`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </span>
+            </th>
+            {th("Buy Score (0-100)", "buyScore", "0-100 quantitative score.\n\n1M Price Momentum (40 pts): Based on 1-month price change, capped at \u00B150%.\n\nInstitutional Momentum (60 pts): Based on quarter-over-quarter share changes. New positions score max points.")}
+            {th("QoQ Shares +/-", "shareDelta", "Quarter-over-quarter change in share count")}
+            {th("QoQ Status", "status", "Quarter-over-quarter position status")}
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
-          {sorted.map((row, i) => (
+          {sorted.map((row, i) => {
+            const gain = estGain(row);
+            const priceChg = getPriceChange(row, priceChangePeriod);
+            return (
             <tr key={`${row.cusip}-${i}`} className="hover:bg-gray-50">
               <td className="px-4 py-3 text-sm font-medium">
                 {row.ticker ? (
@@ -125,14 +170,22 @@ export function PortfolioTable({ rows }: { rows: PortfolioRow[] }) {
                   : <span className="text-muted">--</span>}
               </td>
               <td className="px-4 py-3 text-sm font-mono">
-                {row.priceChange1M != null ? (
+                {gain != null ? (
+                  <span className={gain >= 0 ? "text-green-600" : "text-red-600"}>
+                    {gain >= 0 ? "+" : ""}
+                    {(gain * 100).toFixed(1)}%
+                  </span>
+                ) : (
+                  <span className="text-muted">--</span>
+                )}
+              </td>
+              <td className="px-4 py-3 text-sm font-mono">
+                {priceChg != null ? (
                   <span
-                    className={
-                      row.priceChange1M >= 0 ? "text-green-600" : "text-red-600"
-                    }
+                    className={priceChg >= 0 ? "text-green-600" : "text-red-600"}
                   >
-                    {row.priceChange1M >= 0 ? "+" : ""}
-                    {(row.priceChange1M * 100).toFixed(1)}%
+                    {priceChg >= 0 ? "+" : ""}
+                    {(priceChg * 100).toFixed(1)}%
                   </span>
                 ) : (
                   <span className="text-muted">--</span>
@@ -159,7 +212,8 @@ export function PortfolioTable({ rows }: { rows: PortfolioRow[] }) {
                 <StatusBadge status={row.status} />
               </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>

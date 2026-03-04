@@ -35,6 +35,9 @@ export interface PortfolioRow {
   industry: string | null;
   currentPrice: number | null;
   priceChange1M: number | null;
+  priceChange6M: number | null;
+  priceChange1Y: number | null;
+  entryPrice: number | null;
   buyScore: number | null;
 }
 

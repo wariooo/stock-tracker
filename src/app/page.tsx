@@ -44,6 +44,8 @@ export default async function Home() {
         const quote = await getQuote(row.ticker);
         row.currentPrice = quote.price;
         row.priceChange1M = quote.priceChange1M;
+        row.priceChange6M = quote.priceChange6M;
+        row.priceChange1Y = quote.priceChange1Y;
         row.industry = quote.industry;
         const prevRow = previousPositions.find(
           (p) => !p.putCall && p.issuer.toUpperCase() === row.issuer.toUpperCase()

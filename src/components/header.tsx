@@ -17,7 +17,7 @@ export function Header() {
       if (data.success) {
         setMessage(
           data.newFilings > 0
-            ? `Found ${data.newFilings} new filing(s), ${data.totalPositions} positions`
+            ? `Found ${data.newFilings} new filing(s)`
             : "No new filings found"
         );
         router.refresh();

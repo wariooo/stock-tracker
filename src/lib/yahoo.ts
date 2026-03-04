@@ -37,6 +37,8 @@ export async function searchTicker(
 export interface QuoteData {
   price: number | null;
   priceChange1M: number | null;
+  priceChange6M: number | null;
+  priceChange1Y: number | null;
   industry: string | null;
 }
 
@@ -47,25 +49,40 @@ export async function getQuote(ticker: string): Promise<QuoteData> {
     const price = result?.regularMarketPrice ?? null;
     const prevClose = result?.regularMarketPreviousClose;
 
-    // Get 1-month change from 52-week data or historical
+    // Compute price changes for multiple periods
     let priceChange1M: number | null = null;
-    try {
-      const oneMonthAgo = new Date(Date.now() - 30 * 86400000);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const hist: any = await yahooFinance.chart(ticker, {
-        period1: oneMonthAgo,
-        interval: "1d",
-      });
-      const quotes = hist?.quotes || [];
-      if (quotes.length > 0 && price != null) {
-        const oldPrice = quotes[0].close as number;
-        if (oldPrice > 0) {
-          priceChange1M = (price - oldPrice) / oldPrice;
+    let priceChange6M: number | null = null;
+    let priceChange1Y: number | null = null;
+
+    async function fetchPriceChange(daysAgo: number): Promise<number | null> {
+      try {
+        const start = new Date(Date.now() - daysAgo * 86400000);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const hist: any = await yahooFinance.chart(ticker, {
+          period1: start,
+          interval: "1d",
+        });
+        const quotes = hist?.quotes || [];
+        if (quotes.length > 0 && price != null) {
+          const oldPrice = quotes[0].close as number;
+          if (oldPrice > 0) {
+            return (price - oldPrice) / oldPrice;
+          }
         }
+      } catch {
+        // no data for this period
       }
-    } catch {
-      // Fall back to no 1M change data
+      return null;
     }
+
+    const [c1m, c6m, c1y] = await Promise.all([
+      fetchPriceChange(30),
+      fetchPriceChange(180),
+      fetchPriceChange(365),
+    ]);
+    priceChange1M = c1m;
+    priceChange6M = c6m;
+    priceChange1Y = c1y;
 
     // Fetch industry from asset profile
     let industry: string | null = null;
@@ -79,9 +96,9 @@ export async function getQuote(ticker: string): Promise<QuoteData> {
       // Industry data not available for all tickers
     }
 
-    return { price, priceChange1M, industry };
+    return { price, priceChange1M, priceChange6M, priceChange1Y, industry };
   } catch {
-    return { price: null, priceChange1M: null, industry: null };
+    return { price: null, priceChange1M: null, priceChange6M: null, priceChange1Y: null, industry: null };
   }
 }
 
