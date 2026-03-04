@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MarkdownText } from "./markdown-text";
 
 interface AiInsightPanelProps {
@@ -11,10 +11,14 @@ interface AiInsightPanelProps {
 export function AiInsightPanel({ type, data }: AiInsightPanelProps) {
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const fetched = useRef(false);
 
   useEffect(() => {
-    let cancelled = false;
+    // Prevent double-fetch from strict mode or re-renders
+    if (fetched.current) return;
+    fetched.current = true;
 
     async function fetchAnalysis() {
       try {
@@ -25,27 +29,27 @@ export function AiInsightPanel({ type, data }: AiInsightPanelProps) {
         });
 
         if (!res.ok) {
+          setError(true);
           setLoading(false);
           return;
         }
 
         const json = await res.json();
-        if (!cancelled) {
+        if (json.analysis) {
           setAnalysis(json.analysis);
+        } else {
+          setError(true);
         }
       } catch {
-        // Graceful degradation
+        setError(true);
       } finally {
-        if (!cancelled) setLoading(false);
+        setLoading(false);
       }
     }
 
     fetchAnalysis();
-    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type]);
-
-  if (!loading && !analysis) return null;
 
   return (
     <div className="rounded-lg border border-border bg-card-bg shadow-sm">
@@ -65,8 +69,12 @@ export function AiInsightPanel({ type, data }: AiInsightPanelProps) {
           {loading ? (
             <div className="flex items-center gap-2 text-sm text-muted">
               <span className="animate-spin inline-block w-4 h-4 border-2 border-muted border-t-accent rounded-full" />
-              Analyzing...
+              Analyzing with AI...
             </div>
+          ) : error ? (
+            <p className="text-sm text-muted">
+              AI analysis unavailable — Ollama may still be warming up. Try refreshing in a moment.
+            </p>
           ) : (
             <MarkdownText text={analysis!} />
           )}

@@ -3,7 +3,7 @@ import crypto from "crypto";
 
 const OLLAMA_URL = process.env.OLLAMA_URL || "http://ollama.railway.internal:11434";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "mistral";
-const TIMEOUT_MS = 30_000;
+const TIMEOUT_MS = 120_000;
 
 function hashPrompt(prompt: string): string {
   return crypto.createHash("sha256").update(prompt).digest("hex").slice(0, 16);
