@@ -188,7 +188,7 @@ export function parseInfoTableXml(
     positions.push({
       issuer,
       cusip,
-      valueUsd: value * 1000,
+      valueUsd: value,
       shares: Number(shrsOrPrn?.sshPrnamt) || 0,
       putCall,
       reportDate: filing.reportDate,

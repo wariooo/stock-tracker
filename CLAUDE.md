@@ -65,7 +65,7 @@ Stock detail: `buildPositionHistory()` + `getPriceHistory()` → render
 
 ### Key conventions
 
-- 13F values from SEC are in thousands of dollars; `sec-client.ts` multiplies by 1000 on parse.
+- 13F values from SEC are used as-is from the XML (some filers report in dollars, not thousands). No multiplier is applied.
 - Options rows (`putCall` field) are excluded from the equity view in `buildPortfolioView`.
 - Security identity is keyed by `issuer|cusip|putCall` (see `securityKey`).
 - Ticker resolution uses an in-memory Map cache for the process lifetime.
