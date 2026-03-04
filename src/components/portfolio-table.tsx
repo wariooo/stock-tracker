@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import type { PortfolioRow } from "@/lib/types";
-import { fmtUsd, fmtPct, fmtShares } from "@/lib/format";
+import { fmtPct, fmtShares } from "@/lib/format";
 import { StatusBadge } from "./status-badge";
 import { ScoreBadge } from "./score-badge";
 
@@ -23,10 +23,26 @@ function estGain(row: PortfolioRow): number | null {
   return (row.currentPrice - row.entryPrice) / row.entryPrice;
 }
 
-export function PortfolioTable({ rows, cik }: { rows: PortfolioRow[]; cik: string }) {
+export function PortfolioTable({ initialRows, cik }: { initialRows: PortfolioRow[]; cik: string }) {
+  const [rows, setRows] = useState(initialRows);
+  const [enriching, setEnriching] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>("valueUsd");
   const [sortAsc, setSortAsc] = useState(false);
   const [priceChangePeriod, setPriceChangePeriod] = useState<PriceChangePeriod>("1M");
+
+  // Fetch price enrichment client-side from the API
+  useEffect(() => {
+    setEnriching(true);
+    fetch(`/api/portfolio?cik=${cik}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.rows && data.rows.length > 0) {
+          setRows(data.rows);
+        }
+        setEnriching(false);
+      })
+      .catch(() => setEnriching(false));
+  }, [cik]);
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -98,6 +114,11 @@ export function PortfolioTable({ rows, cik }: { rows: PortfolioRow[]; cik: strin
   return (
     <>
     <div className="overflow-x-auto rounded-lg border border-border bg-card-bg shadow-sm">
+      {enriching && (
+        <div className="px-4 py-2 text-xs text-muted bg-blue-50 border-b border-border">
+          Loading price data...
+        </div>
+      )}
       <table className="min-w-full divide-y divide-border">
         <thead className="bg-gray-50">
           <tr>

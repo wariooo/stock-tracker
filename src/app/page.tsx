@@ -1,6 +1,6 @@
 import { readFilings, readPositions } from "@/lib/data-store";
-import { buildPortfolioView, scoreBuyPotential } from "@/lib/analysis";
-import { searchTicker, getQuote } from "@/lib/yahoo";
+import { buildPortfolioView } from "@/lib/analysis";
+import { searchTicker } from "@/lib/yahoo";
 import { fmtUsd } from "@/lib/format";
 import { ENTITIES, DEFAULT_CIK, isValidCik } from "@/lib/entities";
 import { Header } from "@/components/header";
@@ -44,38 +44,13 @@ export default async function Home({
     previousPositions
   );
 
-  // Resolve tickers and enrich with price data (batched to avoid rate limits)
-  const BATCH_SIZE = 5;
-  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-    const batch = rows.slice(i, i + BATCH_SIZE);
-    const results = await Promise.allSettled(
-      batch.map(async (row) => {
-        row.ticker = await searchTicker(row.issuer, row.cusip);
-        if (row.ticker) {
-          const quote = await getQuote(row.ticker);
-          row.currentPrice = quote.price;
-          row.priceChange1M = quote.priceChange1M;
-          row.priceChange6M = quote.priceChange6M;
-          row.priceChange1Y = quote.priceChange1Y;
-          row.industry = quote.industry;
-          const prevRow = previousPositions.find(
-            (p) => !p.putCall && p.issuer.toUpperCase() === row.issuer.toUpperCase()
-          );
-          row.buyScore = scoreBuyPotential({
-            priceChange1M: quote.priceChange1M,
-            shareDelta: row.shareDelta,
-            prevShares: prevRow?.shares ?? 0,
-            status: row.status,
-          });
-        }
-      })
-    );
-    for (const r of results) {
-      if (r.status === "rejected") {
-        console.error("[page] Enrichment failed:", r.reason);
-      }
-    }
-  }
+  // Resolve tickers only (fast — uses overrides + in-memory cache)
+  // Price enrichment happens client-side in PortfolioTable
+  await Promise.allSettled(
+    rows.map(async (row) => {
+      row.ticker = await searchTicker(row.issuer, row.cusip);
+    })
+  );
 
   const positionCount = rows.length;
 
@@ -88,7 +63,7 @@ export default async function Home({
           <StatCard label="Positions" value={String(positionCount)} />
           <StatCard label="Total 13F Value" value={fmtUsd(totalValue)} />
         </div>
-        <PortfolioTable rows={rows} cik={cik} />
+        <PortfolioTable initialRows={rows} cik={cik} />
       </main>
     </div>
   );
