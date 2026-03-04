@@ -46,12 +46,13 @@ export function Header({ entities, selectedCik }: HeaderProps) {
   return (
     <header className="border-b border-border bg-card-bg">
       <div className="mx-auto max-w-7xl px-4 py-4 flex items-center justify-between">
-        <div>
+        <div className="flex items-center gap-3">
           <h1 className="text-xl font-bold">SEC 13F Stock Tracker</h1>
+          <span className="text-sm text-muted">Source:</span>
           <select
             value={selectedCik}
             onChange={(e) => handleEntityChange(e.target.value)}
-            className="mt-1 text-sm text-muted bg-transparent border border-border rounded px-2 py-1 cursor-pointer hover:border-accent focus:outline-none focus:border-accent"
+            className="text-sm text-muted bg-transparent border border-border rounded px-2 py-1 cursor-pointer hover:border-accent focus:outline-none focus:border-accent"
           >
             {entities.map((entity) => (
               <option key={entity.cik} value={entity.cik}>

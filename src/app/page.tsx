@@ -44,29 +44,33 @@ export default async function Home({
     previousPositions
   );
 
-  // Resolve tickers and enrich with price data
-  await Promise.allSettled(
-    rows.map(async (row) => {
-      row.ticker = await searchTicker(row.issuer);
-      if (row.ticker) {
-        const quote = await getQuote(row.ticker);
-        row.currentPrice = quote.price;
-        row.priceChange1M = quote.priceChange1M;
-        row.priceChange6M = quote.priceChange6M;
-        row.priceChange1Y = quote.priceChange1Y;
-        row.industry = quote.industry;
-        const prevRow = previousPositions.find(
-          (p) => !p.putCall && p.issuer.toUpperCase() === row.issuer.toUpperCase()
-        );
-        row.buyScore = scoreBuyPotential({
-          priceChange1M: quote.priceChange1M,
-          shareDelta: row.shareDelta,
-          prevShares: prevRow?.shares ?? 0,
-          status: row.status,
-        });
-      }
-    })
-  );
+  // Resolve tickers and enrich with price data (batched to avoid rate limits)
+  const BATCH_SIZE = 5;
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const batch = rows.slice(i, i + BATCH_SIZE);
+    await Promise.allSettled(
+      batch.map(async (row) => {
+        row.ticker = await searchTicker(row.issuer, row.cusip);
+        if (row.ticker) {
+          const quote = await getQuote(row.ticker);
+          row.currentPrice = quote.price;
+          row.priceChange1M = quote.priceChange1M;
+          row.priceChange6M = quote.priceChange6M;
+          row.priceChange1Y = quote.priceChange1Y;
+          row.industry = quote.industry;
+          const prevRow = previousPositions.find(
+            (p) => !p.putCall && p.issuer.toUpperCase() === row.issuer.toUpperCase()
+          );
+          row.buyScore = scoreBuyPotential({
+            priceChange1M: quote.priceChange1M,
+            shareDelta: row.shareDelta,
+            prevShares: prevRow?.shares ?? 0,
+            status: row.status,
+          });
+        }
+      })
+    );
+  }
 
   const positionCount = rows.length;
 

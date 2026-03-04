@@ -5,6 +5,24 @@ const yahooFinance = new YahooFinance();
 
 const tickerCache = new Map<string, string | null>();
 
+// CUSIP-to-ticker lookup via OpenFIGI API
+async function cusipToTicker(cusip: string): Promise<string | null> {
+  try {
+    const res = await fetch("https://api.openfigi.com/v3/mapping", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify([{ idType: "ID_CUSIP", idValue: cusip }]),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const figi = data?.[0]?.data?.[0];
+    if (figi?.ticker) return figi.ticker as string;
+  } catch (e) {
+    console.warn(`[openfigi] CUSIP lookup failed for ${cusip}:`, e);
+  }
+  return null;
+}
+
 // Manual overrides for 13F issuer names that Yahoo search can't resolve
 const TICKER_OVERRIDES: Record<string, string> = {
   "BLOOM ENERGY CORP": "BE",
@@ -241,18 +259,29 @@ async function yahooSearch(query: string): Promise<string | null> {
 }
 
 export async function searchTicker(
-  issuerName: string
+  issuerName: string,
+  cusip?: string
 ): Promise<string | null> {
-  if (tickerCache.has(issuerName)) {
-    return tickerCache.get(issuerName)!;
+  const cacheKey = cusip ? `${issuerName}|${cusip}` : issuerName;
+  if (tickerCache.has(cacheKey)) {
+    return tickerCache.get(cacheKey)!;
   }
 
   // Check manual overrides first
   const upper = issuerName.toUpperCase().trim();
   if (TICKER_OVERRIDES[upper]) {
     const ticker = TICKER_OVERRIDES[upper];
-    tickerCache.set(issuerName, ticker);
+    tickerCache.set(cacheKey, ticker);
     return ticker;
+  }
+
+  // Try CUSIP lookup via OpenFIGI
+  if (cusip) {
+    const figiTicker = await cusipToTicker(cusip);
+    if (figiTicker) {
+      tickerCache.set(cacheKey, figiTicker);
+      return figiTicker;
+    }
   }
 
   // Try full name search
@@ -266,11 +295,19 @@ export async function searchTicker(
     }
   }
 
+  // Fallback: try first 2 words of issuer name
   if (!ticker) {
-    console.warn(`[yahoo] Could not resolve ticker for: "${issuerName}"`);
+    const words = upper.split(/\s+/).slice(0, 2).join(" ");
+    if (words !== upper && words.length > 2) {
+      ticker = await yahooSearch(words);
+    }
   }
 
-  tickerCache.set(issuerName, ticker);
+  if (!ticker) {
+    console.warn(`[yahoo] Could not resolve ticker for: "${issuerName}" (cusip: ${cusip ?? "n/a"})`);
+  }
+
+  tickerCache.set(cacheKey, ticker);
   return ticker;
 }
 
@@ -337,7 +374,8 @@ export async function getQuote(ticker: string): Promise<QuoteData> {
     }
 
     return { price, priceChange1M, priceChange6M, priceChange1Y, industry };
-  } catch {
+  } catch (e) {
+    console.warn(`[yahoo] getQuote failed for ${ticker}:`, e);
     return { price: null, priceChange1M: null, priceChange6M: null, priceChange1Y: null, industry: null };
   }
 }
