@@ -3,10 +3,20 @@ import path from "path";
 import type { FilingMeta, Position } from "./types";
 
 const DATA_DIR = path.join(process.cwd(), "data");
-const FILINGS_PATH = path.join(DATA_DIR, "filings.json");
-const POSITIONS_DIR = path.join(DATA_DIR, "positions");
 const CACHE_DIR = path.join(DATA_DIR, "cache");
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+function entityDir(cik: string) {
+  return path.join(DATA_DIR, cik);
+}
+
+function filingsPath(cik: string) {
+  return path.join(entityDir(cik), "filings.json");
+}
+
+function positionsDir(cik: string) {
+  return path.join(entityDir(cik), "positions");
+}
 
 async function ensureDir(dir: string) {
   await fs.mkdir(dir, { recursive: true });
@@ -14,39 +24,39 @@ async function ensureDir(dir: string) {
 
 // --- Filings ---
 
-export async function readFilings(): Promise<FilingMeta[]> {
+export async function readFilings(cik: string): Promise<FilingMeta[]> {
   try {
-    const raw = await fs.readFile(FILINGS_PATH, "utf-8");
+    const raw = await fs.readFile(filingsPath(cik), "utf-8");
     return JSON.parse(raw) as FilingMeta[];
   } catch {
     return [];
   }
 }
 
-export async function writeFilings(filings: FilingMeta[]) {
-  await ensureDir(DATA_DIR);
-  await fs.writeFile(FILINGS_PATH, JSON.stringify(filings, null, 2));
+export async function writeFilings(cik: string, filings: FilingMeta[]) {
+  await ensureDir(entityDir(cik));
+  await fs.writeFile(filingsPath(cik), JSON.stringify(filings, null, 2));
 }
 
 // --- Positions ---
 
-function positionFile(accession: string) {
+function positionFile(cik: string, accession: string) {
   const safe = accession.replace(/-/g, "_");
-  return path.join(POSITIONS_DIR, `${safe}.json`);
+  return path.join(positionsDir(cik), `${safe}.json`);
 }
 
-export async function readPositions(accession: string): Promise<Position[]> {
+export async function readPositions(cik: string, accession: string): Promise<Position[]> {
   try {
-    const raw = await fs.readFile(positionFile(accession), "utf-8");
+    const raw = await fs.readFile(positionFile(cik, accession), "utf-8");
     return JSON.parse(raw) as Position[];
   } catch {
     return [];
   }
 }
 
-export async function writePositions(accession: string, positions: Position[]) {
-  await ensureDir(POSITIONS_DIR);
-  await fs.writeFile(positionFile(accession), JSON.stringify(positions, null, 2));
+export async function writePositions(cik: string, accession: string, positions: Position[]) {
+  await ensureDir(positionsDir(cik));
+  await fs.writeFile(positionFile(cik, accession), JSON.stringify(positions, null, 2));
 }
 
 // --- Cache ---

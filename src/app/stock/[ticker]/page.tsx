@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { readFilings, readPositions } from "@/lib/data-store";
 import { buildPositionHistory } from "@/lib/analysis";
+import { isValidCik, DEFAULT_CIK } from "@/lib/entities";
 import { PriceChart } from "@/components/price-chart";
 import { PositionHistory } from "@/components/position-history";
 
@@ -8,15 +9,19 @@ export const dynamic = "force-dynamic";
 
 export default async function StockPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ ticker: string }>;
+  searchParams: Promise<{ cik?: string }>;
 }) {
   const { ticker } = await params;
+  const { cik: rawCik } = await searchParams;
+  const cik = rawCik && isValidCik(rawCik) ? rawCik : DEFAULT_CIK;
 
-  const filings = await readFilings();
+  const filings = await readFilings(cik);
   const positionsByAccession = new Map<string, Awaited<ReturnType<typeof readPositions>>>();
   for (const f of filings) {
-    positionsByAccession.set(f.accession, await readPositions(f.accession));
+    positionsByAccession.set(f.accession, await readPositions(cik, f.accession));
   }
 
   // Find cusip/issuer by searching all positions for a ticker match
@@ -60,7 +65,7 @@ export default async function StockPage({
     <div className="min-h-screen">
       <header className="border-b border-border bg-card-bg">
         <div className="mx-auto max-w-7xl px-4 py-4 flex items-center gap-4">
-          <Link href="/" className="text-accent hover:underline text-sm">
+          <Link href={`/?cik=${cik}`} className="text-accent hover:underline text-sm">
             &larr; Back
           </Link>
           <div>

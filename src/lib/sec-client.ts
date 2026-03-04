@@ -160,7 +160,7 @@ export async function pollFilings(cik: string): Promise<{
   totalPositions: number;
 }> {
   const remoteFilings = await getFilings(cik, 20);
-  const existing = await readFilings();
+  const existing = await readFilings(cik);
   const existingAccessions = new Set(existing.map((f) => f.accession));
 
   let newCount = 0;
@@ -176,7 +176,7 @@ export async function pollFilings(cik: string): Promise<{
     const xml = await res.text();
     const positions = parseInfoTableXml(xml, filing);
 
-    await writePositions(filing.accession, positions);
+    await writePositions(cik, filing.accession, positions);
     existing.push(filing);
     newCount++;
     totalPos += positions.length;
@@ -187,7 +187,7 @@ export async function pollFilings(cik: string): Promise<{
 
   // Sort by reportDate descending
   existing.sort((a, b) => b.reportDate.localeCompare(a.reportDate));
-  await writeFilings(existing);
+  await writeFilings(cik, existing);
 
   return { newFilings: newCount, totalPositions: totalPos };
 }

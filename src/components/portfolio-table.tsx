@@ -23,7 +23,7 @@ function estGain(row: PortfolioRow): number | null {
   return (row.currentPrice - row.entryPrice) / row.entryPrice;
 }
 
-export function PortfolioTable({ rows }: { rows: PortfolioRow[] }) {
+export function PortfolioTable({ rows, cik }: { rows: PortfolioRow[]; cik: string }) {
   const [sortKey, setSortKey] = useState<SortKey>("valueUsd");
   const [sortAsc, setSortAsc] = useState(false);
   const [priceChangePeriod, setPriceChangePeriod] = useState<PriceChangePeriod>("1M");
@@ -145,7 +145,7 @@ export function PortfolioTable({ rows }: { rows: PortfolioRow[] }) {
               <td className="px-4 py-3 text-sm font-medium">
                 {row.ticker ? (
                   <Link
-                    href={`/stock/${row.ticker}`}
+                    href={`/stock/${row.ticker}?cik=${cik}`}
                     className="text-accent hover:underline"
                   >
                     {row.ticker}

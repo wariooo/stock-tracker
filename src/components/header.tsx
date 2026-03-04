@@ -2,17 +2,29 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import type { Entity } from "@/lib/entities";
 
-export function Header() {
+interface HeaderProps {
+  entities: Entity[];
+  selectedCik: string;
+}
+
+export function Header({ entities, selectedCik }: HeaderProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  const selectedEntity = entities.find((e) => e.cik === selectedCik);
+
+  function handleEntityChange(cik: string) {
+    router.push(`/?cik=${cik}`);
+  }
 
   async function handleRefresh() {
     setLoading(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/cron/poll-sec", { method: "POST" });
+      const res = await fetch(`/api/cron/poll-sec?cik=${selectedCik}`, { method: "POST" });
       const data = await res.json();
       if (data.success) {
         setMessage(
@@ -36,7 +48,17 @@ export function Header() {
       <div className="mx-auto max-w-7xl px-4 py-4 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold">SEC 13F Stock Tracker</h1>
-          <p className="text-sm text-muted">Situational Awareness LP</p>
+          <select
+            value={selectedCik}
+            onChange={(e) => handleEntityChange(e.target.value)}
+            className="mt-1 text-sm text-muted bg-transparent border border-border rounded px-2 py-1 cursor-pointer hover:border-accent focus:outline-none focus:border-accent"
+          >
+            {entities.map((entity) => (
+              <option key={entity.cik} value={entity.cik}>
+                {entity.name}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="flex items-center gap-3">
           {message && (

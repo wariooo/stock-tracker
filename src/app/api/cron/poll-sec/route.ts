@@ -1,11 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { pollFilings } from "@/lib/sec-client";
+import { isValidCik, DEFAULT_CIK } from "@/lib/entities";
 
-const DEFAULT_CIK = "0002045724"; // Situational Awareness LP
-
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
-    const result = await pollFilings(DEFAULT_CIK);
+    const cik = request.nextUrl.searchParams.get("cik") || DEFAULT_CIK;
+    if (!isValidCik(cik)) {
+      return NextResponse.json({ success: false, error: "Invalid CIK" }, { status: 400 });
+    }
+    const result = await pollFilings(cik);
     return NextResponse.json({
       success: true,
       ...result,

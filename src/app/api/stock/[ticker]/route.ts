@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFilings, readPositions } from "@/lib/data-store";
 import { buildPositionHistory } from "@/lib/analysis";
 import { getPriceHistory } from "@/lib/yahoo";
+import { isValidCik, DEFAULT_CIK } from "@/lib/entities";
 import type { StockDetail } from "@/lib/types";
 
 export async function GET(
@@ -14,11 +15,15 @@ export async function GET(
     | "1m"
     | "6m"
     | "1y";
+  const cik = request.nextUrl.searchParams.get("cik") || DEFAULT_CIK;
+  if (!isValidCik(cik)) {
+    return NextResponse.json({ error: "Invalid CIK" }, { status: 400 });
+  }
 
-  const filings = await readFilings();
+  const filings = await readFilings(cik);
   const positionsByAccession = new Map<string, Awaited<ReturnType<typeof readPositions>>>();
   for (const f of filings) {
-    positionsByAccession.set(f.accession, await readPositions(f.accession));
+    positionsByAccession.set(f.accession, await readPositions(cik, f.accession));
   }
 
   // Find the cusip/issuer for this ticker by searching latest positions

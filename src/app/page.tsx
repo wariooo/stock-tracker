@@ -2,19 +2,27 @@ import { readFilings, readPositions } from "@/lib/data-store";
 import { buildPortfolioView, scoreBuyPotential } from "@/lib/analysis";
 import { searchTicker, getQuote } from "@/lib/yahoo";
 import { fmtUsd } from "@/lib/format";
+import { ENTITIES, DEFAULT_CIK, isValidCik } from "@/lib/entities";
 import { Header } from "@/components/header";
 import { StatCard } from "@/components/stat-card";
 import { PortfolioTable } from "@/components/portfolio-table";
 
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
-  const filings = await readFilings();
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ cik?: string }>;
+}) {
+  const { cik: rawCik } = await searchParams;
+  const cik = rawCik && isValidCik(rawCik) ? rawCik : DEFAULT_CIK;
+
+  const filings = await readFilings(cik);
 
   if (filings.length === 0) {
     return (
       <div className="min-h-screen">
-        <Header />
+        <Header entities={ENTITIES} selectedCik={cik} />
         <main className="mx-auto max-w-7xl px-4 py-12 text-center">
           <h2 className="text-2xl font-semibold mb-4">No filings loaded</h2>
           <p className="text-muted mb-6">
@@ -27,9 +35,9 @@ export default async function Home() {
   }
 
   const latest = filings[0];
-  const latestPositions = await readPositions(latest.accession);
+  const latestPositions = await readPositions(cik, latest.accession);
   const previousPositions =
-    filings.length > 1 ? await readPositions(filings[1].accession) : [];
+    filings.length > 1 ? await readPositions(cik, filings[1].accession) : [];
 
   const { rows, totalValue } = buildPortfolioView(
     latestPositions,
@@ -64,14 +72,14 @@ export default async function Home() {
 
   return (
     <div className="min-h-screen">
-      <Header />
+      <Header entities={ENTITIES} selectedCik={cik} />
       <main className="mx-auto max-w-7xl px-4 py-8">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
           <StatCard label="Latest Report Date" value={latest.reportDate} />
           <StatCard label="Positions" value={String(positionCount)} />
           <StatCard label="Total 13F Value" value={fmtUsd(totalValue)} />
         </div>
-        <PortfolioTable rows={rows} />
+        <PortfolioTable rows={rows} cik={cik} />
       </main>
     </div>
   );
