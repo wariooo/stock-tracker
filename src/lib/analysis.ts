@@ -63,7 +63,7 @@ export function buildPortfolioView(
       priceChange1M: null,
       priceChange6M: null,
       priceChange1Y: null,
-      entryPrice: p.shares > 0 ? p.valueUsd / p.shares : null,
+      entryPrice: p.shares > 0 ? p.valueUsd / p.shares / 1000 : null,
       buyScore: null,
     };
   });
