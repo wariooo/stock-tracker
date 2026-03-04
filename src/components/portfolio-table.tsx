@@ -87,7 +87,6 @@ export function PortfolioTable({ rows, cik }: { rows: PortfolioRow[]; cik: strin
       title={tooltip}
     >
       {label}
-      {tooltip && <span className="ml-0.5 text-muted/60">&#9432;</span>}
       {sortKey === key && (
         <span className="ml-1">{sortAsc ? "\u25B2" : "\u25BC"}</span>
       )}
@@ -131,7 +130,7 @@ export function PortfolioTable({ rows, cik }: { rows: PortfolioRow[]; cik: strin
                 ))}
               </span>
             </th>
-            {th("Buy Score (0-100)", "buyScore", "0-100 quantitative score.\n\n1M Price Momentum (40 pts): Based on 1-month price change, capped at \u00B150%.\n\nInstitutional Momentum (60 pts): Based on quarter-over-quarter share changes. New positions score max points.")}
+            {th("Buy Score", "buyScore", "0-100 quantitative score. 1M Price Momentum (40 pts): Based on 1-month price change, capped at ±50%. Institutional Momentum (60 pts): Based on quarter-over-quarter share changes. New positions score max points.")}
             {th("QoQ Shares +/-", "shareDelta", "Quarter-over-quarter change in share count")}
             {th("QoQ Status", "status", "Quarter-over-quarter position status")}
           </tr>

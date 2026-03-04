@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFilings, readPositions } from "@/lib/data-store";
 import { buildPositionHistory } from "@/lib/analysis";
-import { getPriceHistory } from "@/lib/yahoo";
+import { getPriceHistory, searchTicker } from "@/lib/yahoo";
 import { isValidCik, DEFAULT_CIK } from "@/lib/entities";
 import { isValidTicker, isValidPeriod } from "@/lib/validate";
 import type { StockDetail } from "@/lib/types";
@@ -51,20 +51,23 @@ export async function GET(
     }
   }
 
-  // Fallback: match by cusip=ticker or exact issuer name
+  // Fallback: resolve ticker for each unique position to find a match
   if (!issuer) {
+    const seen = new Set<string>();
     for (const positions of positionsByAccession.values()) {
-      const match = positions.find(
-        (p) =>
-          !p.putCall &&
-          (p.cusip === ticker ||
-            p.issuer.toUpperCase() === ticker.toUpperCase())
-      );
-      if (match) {
-        cusip = match.cusip;
-        issuer = match.issuer;
-        break;
+      for (const p of positions) {
+        if (p.putCall) continue;
+        const key = `${p.cusip}|${p.issuer}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const resolved = await searchTicker(p.issuer, p.cusip);
+        if (resolved && resolved.toUpperCase() === ticker.toUpperCase()) {
+          cusip = p.cusip;
+          issuer = p.issuer;
+          break;
+        }
       }
+      if (issuer) break;
     }
   }
 
