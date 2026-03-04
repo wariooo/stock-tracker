@@ -1,22 +1,58 @@
 import YahooFinance from "yahoo-finance2";
 import type { PricePoint } from "./types";
+import { isValidCusip } from "./validate";
 
 const yahooFinance = new YahooFinance();
 
-const tickerCache = new Map<string, string | null>();
+// Ticker cache with 24h TTL
+const TICKER_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const tickerCache = new Map<string, { value: string | null; ts: number }>();
+
+function getCachedTicker(key: string): string | null | undefined {
+  const entry = tickerCache.get(key);
+  if (!entry) return undefined;
+  if (Date.now() - entry.ts > TICKER_CACHE_TTL_MS) {
+    tickerCache.delete(key);
+    return undefined;
+  }
+  return entry.value;
+}
+
+function setCachedTicker(key: string, value: string | null) {
+  tickerCache.set(key, { value, ts: Date.now() });
+}
+
+// Quote cache with 5min TTL
+const QUOTE_CACHE_TTL_MS = 5 * 60 * 1000;
+const quoteCache = new Map<string, { value: QuoteData; ts: number }>();
+
+const OPENFIGI_TIMEOUT_MS = 10_000;
 
 // CUSIP-to-ticker lookup via OpenFIGI API
 async function cusipToTicker(cusip: string): Promise<string | null> {
+  if (!isValidCusip(cusip)) {
+    console.warn(`[openfigi] Invalid CUSIP format: ${cusip}`);
+    return null;
+  }
+
   try {
-    const res = await fetch("https://api.openfigi.com/v3/mapping", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify([{ idType: "ID_CUSIP", idValue: cusip }]),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const figi = data?.[0]?.data?.[0];
-    if (figi?.ticker) return figi.ticker as string;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), OPENFIGI_TIMEOUT_MS);
+
+    try {
+      const res = await fetch("https://api.openfigi.com/v3/mapping", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify([{ idType: "ID_CUSIP", idValue: cusip }]),
+        signal: controller.signal,
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const figi = data?.[0]?.data?.[0];
+      if (figi?.ticker) return figi.ticker as string;
+    } finally {
+      clearTimeout(timeout);
+    }
   } catch (e) {
     console.warn(`[openfigi] CUSIP lookup failed for ${cusip}:`, e);
   }
@@ -25,6 +61,8 @@ async function cusipToTicker(cusip: string): Promise<string | null> {
 
 // Manual overrides for 13F issuer names that Yahoo search can't resolve
 const TICKER_OVERRIDES: Record<string, string> = {
+  "LUMENTUM HLDGS INC": "LITE",
+  "LUMENTUM HOLDINGS INC": "LITE",
   "BLOOM ENERGY CORP": "BE",
   "COREWEAVE INC": "CRWV",
   "CORE SCIENTIFIC INC NEW": "CORZ",
@@ -253,7 +291,8 @@ async function yahooSearch(query: string): Promise<string | null> {
     // Fall back to first result with a symbol
     const any = quotes.find((q) => typeof q.symbol === "string");
     return any ? String(any.symbol) : null;
-  } catch {
+  } catch (e) {
+    console.warn(`[yahoo] Search failed for "${query}":`, e);
     return null;
   }
 }
@@ -263,15 +302,16 @@ export async function searchTicker(
   cusip?: string
 ): Promise<string | null> {
   const cacheKey = cusip ? `${issuerName}|${cusip}` : issuerName;
-  if (tickerCache.has(cacheKey)) {
-    return tickerCache.get(cacheKey)!;
+  const cached = getCachedTicker(cacheKey);
+  if (cached !== undefined) {
+    return cached;
   }
 
   // Check manual overrides first
   const upper = issuerName.toUpperCase().trim();
   if (TICKER_OVERRIDES[upper]) {
     const ticker = TICKER_OVERRIDES[upper];
-    tickerCache.set(cacheKey, ticker);
+    setCachedTicker(cacheKey, ticker);
     return ticker;
   }
 
@@ -279,7 +319,7 @@ export async function searchTicker(
   if (cusip) {
     const figiTicker = await cusipToTicker(cusip);
     if (figiTicker) {
-      tickerCache.set(cacheKey, figiTicker);
+      setCachedTicker(cacheKey, figiTicker);
       return figiTicker;
     }
   }
@@ -307,7 +347,7 @@ export async function searchTicker(
     console.warn(`[yahoo] Could not resolve ticker for: "${issuerName}" (cusip: ${cusip ?? "n/a"})`);
   }
 
-  tickerCache.set(cacheKey, ticker);
+  setCachedTicker(cacheKey, ticker);
   return ticker;
 }
 
@@ -320,46 +360,60 @@ export interface QuoteData {
 }
 
 export async function getQuote(ticker: string): Promise<QuoteData> {
+  // Check quote cache
+  const cached = quoteCache.get(ticker);
+  if (cached && Date.now() - cached.ts < QUOTE_CACHE_TTL_MS) {
+    return cached.value;
+  }
+
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result: any = await yahooFinance.quote(ticker);
     const price = result?.regularMarketPrice ?? null;
-    const prevClose = result?.regularMarketPreviousClose;
 
-    // Compute price changes for multiple periods
+    // Fetch 1 year of data and compute all period changes from it
     let priceChange1M: number | null = null;
     let priceChange6M: number | null = null;
     let priceChange1Y: number | null = null;
 
-    async function fetchPriceChange(daysAgo: number): Promise<number | null> {
-      try {
-        const start = new Date(Date.now() - daysAgo * 86400000);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const hist: any = await yahooFinance.chart(ticker, {
-          period1: start,
-          interval: "1d",
-        });
-        const quotes = hist?.quotes || [];
-        if (quotes.length > 0 && price != null) {
-          const oldPrice = quotes[0].close as number;
+    try {
+      const start = new Date(Date.now() - 365 * 86400000);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const hist: any = await yahooFinance.chart(ticker, {
+        period1: start,
+        interval: "1d",
+      });
+      const quotes = hist?.quotes || [];
+
+      if (quotes.length > 0 && price != null) {
+        // Helper to find price N days ago from the chart data
+        function getPriceChange(daysAgo: number): number | null {
+          const targetTime = Date.now() - daysAgo * 86400000;
+          // Find the closest quote on or after the target date
+          let closest: Record<string, unknown> | null = null;
+          for (const q of quotes) {
+            const qTime = new Date(q.date as string).getTime();
+            if (qTime >= targetTime) {
+              closest = q;
+              break;
+            }
+          }
+          if (!closest) closest = quotes[0] ?? null; // fallback to oldest
+          if (!closest) return null;
+          const oldPrice = closest.close as number;
           if (oldPrice > 0) {
             return (price - oldPrice) / oldPrice;
           }
+          return null;
         }
-      } catch {
-        // no data for this period
-      }
-      return null;
-    }
 
-    const [c1m, c6m, c1y] = await Promise.all([
-      fetchPriceChange(30),
-      fetchPriceChange(180),
-      fetchPriceChange(365),
-    ]);
-    priceChange1M = c1m;
-    priceChange6M = c6m;
-    priceChange1Y = c1y;
+        priceChange1M = getPriceChange(30);
+        priceChange6M = getPriceChange(180);
+        priceChange1Y = getPriceChange(365);
+      }
+    } catch (e) {
+      console.warn(`[yahoo] Chart fetch failed for ${ticker}:`, e);
+    }
 
     // Fetch industry from asset profile
     let industry: string | null = null;
@@ -373,10 +427,13 @@ export async function getQuote(ticker: string): Promise<QuoteData> {
       // Industry data not available for all tickers
     }
 
-    return { price, priceChange1M, priceChange6M, priceChange1Y, industry };
+    const quoteData: QuoteData = { price, priceChange1M, priceChange6M, priceChange1Y, industry };
+    quoteCache.set(ticker, { value: quoteData, ts: Date.now() });
+    return quoteData;
   } catch (e) {
     console.warn(`[yahoo] getQuote failed for ${ticker}:`, e);
-    return { price: null, priceChange1M: null, priceChange6M: null, priceChange1Y: null, industry: null };
+    const fallback: QuoteData = { price: null, priceChange1M: null, priceChange6M: null, priceChange1Y: null, industry: null };
+    return fallback;
   }
 }
 
@@ -412,7 +469,8 @@ export async function getPriceHistory(
       date: new Date(q.date as string).toISOString().split("T")[0],
       close: (q.close as number) ?? 0,
     }));
-  } catch {
+  } catch (e) {
+    console.warn(`[yahoo] getPriceHistory failed for ${ticker} (${period}):`, e);
     return [];
   }
 }

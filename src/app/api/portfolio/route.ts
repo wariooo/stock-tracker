@@ -5,6 +5,8 @@ import { searchTicker, getQuote } from "@/lib/yahoo";
 import { isValidCik, DEFAULT_CIK } from "@/lib/entities";
 import type { PortfolioResponse } from "@/lib/types";
 
+const BATCH_SIZE = 5;
+
 export async function GET(request: NextRequest) {
   const cik = request.nextUrl.searchParams.get("cik") || DEFAULT_CIK;
   if (!isValidCik(cik)) {
@@ -31,29 +33,37 @@ export async function GET(request: NextRequest) {
     previousPositions
   );
 
-  // Resolve tickers and enrich with price data
-  await Promise.allSettled(
-    rows.map(async (row) => {
-      row.ticker = await searchTicker(row.issuer);
-      if (row.ticker) {
-        const quote = await getQuote(row.ticker);
-        row.currentPrice = quote.price;
-        row.priceChange1M = quote.priceChange1M;
-        row.priceChange6M = quote.priceChange6M;
-        row.priceChange1Y = quote.priceChange1Y;
-        row.industry = quote.industry;
-        const prevRow = previousPositions.find(
-          (p) => !p.putCall && p.issuer.toUpperCase() === row.issuer.toUpperCase()
-        );
-        row.buyScore = scoreBuyPotential({
-          priceChange1M: quote.priceChange1M,
-          shareDelta: row.shareDelta,
-          prevShares: prevRow?.shares ?? 0,
-          status: row.status,
-        });
+  // Resolve tickers and enrich with price data (batched to avoid rate limits)
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const batch = rows.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(
+      batch.map(async (row) => {
+        row.ticker = await searchTicker(row.issuer);
+        if (row.ticker) {
+          const quote = await getQuote(row.ticker);
+          row.currentPrice = quote.price;
+          row.priceChange1M = quote.priceChange1M;
+          row.priceChange6M = quote.priceChange6M;
+          row.priceChange1Y = quote.priceChange1Y;
+          row.industry = quote.industry;
+          const prevRow = previousPositions.find(
+            (p) => !p.putCall && p.issuer.toUpperCase() === row.issuer.toUpperCase()
+          );
+          row.buyScore = scoreBuyPotential({
+            priceChange1M: quote.priceChange1M,
+            shareDelta: row.shareDelta,
+            prevShares: prevRow?.shares ?? 0,
+            status: row.status,
+          });
+        }
+      })
+    );
+    for (const r of results) {
+      if (r.status === "rejected") {
+        console.error("[portfolio] Enrichment failed:", r.reason);
       }
-    })
-  );
+    }
+  }
 
   return NextResponse.json<PortfolioResponse>({
     filing: latest,

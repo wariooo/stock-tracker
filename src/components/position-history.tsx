@@ -32,8 +32,8 @@ export function PositionHistory({ entries }: { entries: PositionHistoryEntry[] }
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
-          {sorted.map((e) => (
-            <tr key={e.reportDate} className="hover:bg-gray-50">
+          {sorted.map((e, i) => (
+            <tr key={`${e.reportDate}-${i}`} className="hover:bg-gray-50">
               <td className="px-4 py-3 text-sm">{e.reportDate}</td>
               <td className="px-4 py-3 text-sm font-mono">
                 {fmtShares(e.shares)}

@@ -6,6 +6,15 @@ import type {
   PositionStatus,
 } from "./types";
 
+// Score constants
+const MOMENTUM_MAX_POINTS = 40;
+const MOMENTUM_NEUTRAL_POINTS = 20;
+const MOMENTUM_CLAMP_RANGE = 0.5;
+const INSTITUTIONAL_MAX_POINTS = 60;
+const INSTITUTIONAL_NEUTRAL_POINTS = 30;
+const SCORE_MIN = 0;
+const SCORE_MAX = 100;
+
 function securityKey(p: Position): string {
   return `${p.issuer}|${p.cusip}|${p.putCall || ""}`;
 }
@@ -97,7 +106,7 @@ export function buildPositionHistory(
     );
 
     if (match) {
-      const shareDelta = prevShares !== null ? match.shares - prevShares : 0;
+      const shareDelta = prevShares !== null ? match.shares - prevShares : match.shares;
       const changePct =
         prevShares !== null && prevShares > 0
           ? shareDelta / prevShares
@@ -140,27 +149,29 @@ export function scoreBuyPotential(inputs: BuyScoreInputs): number {
   let score = 0;
 
   // 1M momentum (0-40 pts): positive recent price movement
-  if (inputs.priceChange1M != null) {
-    // Clamp to [-0.5, 0.5] range, map to 0-40
-    const clamped = Math.max(-0.5, Math.min(0.5, inputs.priceChange1M));
-    score += Math.round(((clamped + 0.5) / 1.0) * 40);
+  if (inputs.priceChange1M != null && isFinite(inputs.priceChange1M)) {
+    const clamped = Math.max(-MOMENTUM_CLAMP_RANGE, Math.min(MOMENTUM_CLAMP_RANGE, inputs.priceChange1M));
+    score += Math.round(((clamped + MOMENTUM_CLAMP_RANGE) / (MOMENTUM_CLAMP_RANGE * 2)) * MOMENTUM_MAX_POINTS);
   } else {
-    score += 20; // neutral if no data
+    score += MOMENTUM_NEUTRAL_POINTS; // neutral if no data
   }
 
   // Institutional momentum (0-60 pts): share change from last quarter
   if (inputs.status === "NEW") {
-    score += 60; // New position = strong signal
+    score += INSTITUTIONAL_MAX_POINTS; // New position = strong signal
   } else if (inputs.status === "EXITED") {
     score += 0;
   } else if (inputs.prevShares > 0) {
     const changePct = inputs.shareDelta / inputs.prevShares;
-    // Clamp to [-1, 1], map to 0-60
-    const clamped = Math.max(-1, Math.min(1, changePct));
-    score += Math.round(((clamped + 1) / 2) * 60);
+    if (!isFinite(changePct)) {
+      score += INSTITUTIONAL_NEUTRAL_POINTS;
+    } else {
+      const clamped = Math.max(-1, Math.min(1, changePct));
+      score += Math.round(((clamped + 1) / 2) * INSTITUTIONAL_MAX_POINTS);
+    }
   } else {
-    score += 30; // neutral
+    score += INSTITUTIONAL_NEUTRAL_POINTS; // neutral
   }
 
-  return Math.max(0, Math.min(100, score));
+  return Math.max(SCORE_MIN, Math.min(SCORE_MAX, score));
 }

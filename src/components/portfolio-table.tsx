@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import type { PortfolioRow } from "@/lib/types";
 import { fmtUsd, fmtPct, fmtShares } from "@/lib/format";
@@ -37,7 +37,7 @@ export function PortfolioTable({ rows, cik }: { rows: PortfolioRow[]; cik: strin
     }
   }
 
-  const sorted = [...rows].sort((a, b) => {
+  const sorted = useMemo(() => [...rows].sort((a, b) => {
     let cmp = 0;
     switch (sortKey) {
       case "ticker":
@@ -78,7 +78,7 @@ export function PortfolioTable({ rows, cik }: { rows: PortfolioRow[]; cik: strin
         break;
     }
     return sortAsc ? cmp : -cmp;
-  });
+  }), [rows, sortKey, sortAsc, priceChangePeriod]);
 
   const th = (label: string, key: SortKey, tooltip?: string) => (
     <th
@@ -145,7 +145,7 @@ export function PortfolioTable({ rows, cik }: { rows: PortfolioRow[]; cik: strin
               <td className="px-4 py-3 text-sm font-medium">
                 {row.ticker ? (
                   <Link
-                    href={`/stock/${row.ticker}?cik=${cik}`}
+                    href={`/stock/${encodeURIComponent(row.ticker)}?cik=${cik}&cusip=${encodeURIComponent(row.cusip)}`}
                     className="text-accent hover:underline"
                   >
                     {row.ticker}

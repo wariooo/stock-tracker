@@ -12,10 +12,10 @@ export default async function StockPage({
   searchParams,
 }: {
   params: Promise<{ ticker: string }>;
-  searchParams: Promise<{ cik?: string }>;
+  searchParams: Promise<{ cik?: string; cusip?: string }>;
 }) {
   const { ticker } = await params;
-  const { cik: rawCik } = await searchParams;
+  const { cik: rawCik, cusip: cusipParam } = await searchParams;
   const cik = rawCik && isValidCik(rawCik) ? rawCik : DEFAULT_CIK;
 
   const filings = await readFilings(cik);
@@ -24,33 +24,35 @@ export default async function StockPage({
     positionsByAccession.set(f.accession, await readPositions(cik, f.accession));
   }
 
-  // Find cusip/issuer by searching all positions for a ticker match
-  let cusip = "";
+  // Find cusip/issuer for this ticker
+  let cusip = cusipParam || "";
   let issuer = "";
-  for (const positions of positionsByAccession.values()) {
-    for (const p of positions) {
-      if (!p.putCall) {
-        // Simple heuristic: check if issuer name relates to ticker
-        // We'll use the URL ticker as-is and match by issuer name
-        cusip = cusip || p.cusip;
-        issuer = issuer || p.issuer;
+
+  if (cusip) {
+    // If cusip provided, find issuer by cusip
+    for (const positions of positionsByAccession.values()) {
+      const match = positions.find((p) => !p.putCall && p.cusip === cusip);
+      if (match) {
+        issuer = match.issuer;
+        break;
       }
     }
   }
 
-  // Try to find exact match by searching positions for the cusip passed as ticker
-  // or by matching ticker in issuer name
-  for (const positions of positionsByAccession.values()) {
-    const match = positions.find(
-      (p) =>
-        !p.putCall &&
-        (p.cusip === ticker ||
-          p.issuer.toUpperCase().includes(ticker.toUpperCase()))
-    );
-    if (match) {
-      cusip = match.cusip;
-      issuer = match.issuer;
-      break;
+  // Fallback: try matching by cusip=ticker or exact ticker in issuer name
+  if (!issuer) {
+    for (const positions of positionsByAccession.values()) {
+      const match = positions.find(
+        (p) =>
+          !p.putCall &&
+          (p.cusip === ticker ||
+            p.issuer.toUpperCase() === ticker.toUpperCase())
+      );
+      if (match) {
+        cusip = match.cusip;
+        issuer = match.issuer;
+        break;
+      }
     }
   }
 
@@ -73,7 +75,7 @@ export default async function StockPage({
             <p className="text-sm text-muted">{issuer}</p>
           </div>
           <a
-            href={`https://finance.yahoo.com/quote/${ticker}`}
+            href={`https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}`}
             target="_blank"
             rel="noopener noreferrer"
             className="ml-auto text-sm text-accent hover:underline"

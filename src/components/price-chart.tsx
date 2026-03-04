@@ -25,16 +25,25 @@ export function PriceChart({ ticker }: { ticker: string }) {
   const [period, setPeriod] = useState<PeriodLabel>("1M");
   const [data, setData] = useState<PricePoint[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/stock/${ticker}?period=${periodMap[period]}`)
-      .then((r) => r.json())
+    setError(null);
+    fetch(`/api/stock/${encodeURIComponent(ticker)}?period=${periodMap[period]}`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`Failed to fetch: ${r.status}`);
+        return r.json();
+      })
       .then((d) => {
         setData(d.prices || []);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch((e) => {
+        setError(e.message || "Failed to load price data");
+        setData([]);
+        setLoading(false);
+      });
   }, [ticker, period]);
 
   return (
@@ -60,6 +69,10 @@ export function PriceChart({ ticker }: { ticker: string }) {
       {loading ? (
         <div className="h-64 flex items-center justify-center text-muted">
           Loading...
+        </div>
+      ) : error ? (
+        <div className="h-64 flex items-center justify-center text-red-500">
+          {error}
         </div>
       ) : data.length === 0 ? (
         <div className="h-64 flex items-center justify-center text-muted">

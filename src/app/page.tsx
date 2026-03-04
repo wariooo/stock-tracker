@@ -48,7 +48,7 @@ export default async function Home({
   const BATCH_SIZE = 5;
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
     const batch = rows.slice(i, i + BATCH_SIZE);
-    await Promise.allSettled(
+    const results = await Promise.allSettled(
       batch.map(async (row) => {
         row.ticker = await searchTicker(row.issuer, row.cusip);
         if (row.ticker) {
@@ -70,6 +70,11 @@ export default async function Home({
         }
       })
     );
+    for (const r of results) {
+      if (r.status === "rejected") {
+        console.error("[page] Enrichment failed:", r.reason);
+      }
+    }
   }
 
   const positionCount = rows.length;

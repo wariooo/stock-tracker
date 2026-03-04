@@ -11,6 +11,8 @@ import {
 
 const SEC_BASE = "https://data.sec.gov";
 const SEC_ARCHIVES = "https://www.sec.gov/Archives/edgar/data";
+const FETCH_TIMEOUT_MS = 30_000;
+const MAX_XML_SIZE = 10 * 1024 * 1024; // 10MB
 
 function getUserAgent(): string {
   const ua = process.env.SEC_USER_AGENT;
@@ -19,16 +21,24 @@ function getUserAgent(): string {
 }
 
 async function fetchWithUA(url: string): Promise<Response> {
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent": getUserAgent(),
-      Accept: "application/json, text/html, application/xml, */*",
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`SEC fetch failed: ${res.status} ${res.statusText} for ${url}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": getUserAgent(),
+        Accept: "application/json, text/html, application/xml, */*",
+      },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      throw new Error(`SEC fetch failed: ${res.status} ${res.statusText} for ${url}`);
+    }
+    return res;
+  } finally {
+    clearTimeout(timeout);
   }
-  return res;
 }
 
 function padCik(cik: string): string {
@@ -76,12 +86,26 @@ export async function getFilings(
   return filings;
 }
 
+function isValidSecUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname.endsWith(".sec.gov");
+  } catch {
+    return false;
+  }
+}
+
 export async function getInfoTableUrl(
   cik: string,
   accession: string
 ): Promise<string | null> {
   const accNoDash = accession.replace(/-/g, "");
   const indexUrl = `${SEC_ARCHIVES}/${cikInt(cik)}/${accNoDash}/${accession}-index.html`;
+
+  if (!isValidSecUrl(indexUrl)) {
+    console.warn(`[sec-client] Constructed invalid SEC URL: ${indexUrl}`);
+    return null;
+  }
 
   const res = await fetchWithUA(indexUrl);
   const html = await res.text();
@@ -116,6 +140,11 @@ export async function getInfoTableUrl(
     });
   }
 
+  if (xmlUrl && !isValidSecUrl(xmlUrl)) {
+    console.warn(`[sec-client] Resolved non-SEC XML URL, skipping: ${xmlUrl}`);
+    return null;
+  }
+
   return xmlUrl;
 }
 
@@ -123,6 +152,11 @@ export function parseInfoTableXml(
   xml: string,
   filing: FilingMeta
 ): Position[] {
+  if (xml.length > MAX_XML_SIZE) {
+    console.warn(`[sec-client] XML too large (${xml.length} bytes), skipping filing ${filing.accession}`);
+    return [];
+  }
+
   const parser = new XMLParser({
     ignoreAttributes: false,
     removeNSPrefix: true,
@@ -137,22 +171,33 @@ export function parseInfoTableXml(
 
   if (!Array.isArray(entries)) entries = [entries];
 
-  return entries.map(
-    (e: Record<string, unknown>): Position => {
-      const shrsOrPrn = e.shrsOrPrnAmt as Record<string, unknown> | undefined;
-      const putCall = (e.putCall as string) || null;
-      return {
-        issuer: (e.nameOfIssuer as string) || "",
-        cusip: (e.cusip as string) || "",
-        valueUsd: (Number(e.value) || 0) * 1000,
-        shares: Number(shrsOrPrn?.sshPrnamt) || 0,
-        putCall,
-        reportDate: filing.reportDate,
-        filingDate: filing.filingDate,
-        accession: filing.accession,
-      };
+  const positions: Position[] = [];
+  for (const e of entries) {
+    const issuer = (e.nameOfIssuer as string) || "";
+    const cusip = (e.cusip as string) || "";
+    const value = Number(e.value);
+
+    if (!issuer || !cusip || isNaN(value)) {
+      console.warn(`[sec-client] Skipping entry with missing fields in ${filing.accession}: issuer="${issuer}" cusip="${cusip}" value=${e.value}`);
+      continue;
     }
-  );
+
+    const shrsOrPrn = e.shrsOrPrnAmt as Record<string, unknown> | undefined;
+    const putCall = (e.putCall as string) || null;
+
+    positions.push({
+      issuer,
+      cusip,
+      valueUsd: value * 1000,
+      shares: Number(shrsOrPrn?.sshPrnamt) || 0,
+      putCall,
+      reportDate: filing.reportDate,
+      filingDate: filing.filingDate,
+      accession: filing.accession,
+    });
+  }
+
+  return positions;
 }
 
 export async function pollFilings(cik: string): Promise<{
