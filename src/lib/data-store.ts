@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import type { FilingMeta, Position } from "./types";
+import type { FilingMeta, Position, CongressTrade, CongressChamber } from "./types";
 import { isValidAccession, isValidCacheKey, sanitizePath } from "./validate";
 
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -111,4 +111,48 @@ export async function writeCache(key: string, data: unknown) {
   await ensureDir(CACHE_DIR);
   const filePath = path.join(CACHE_DIR, `${key}.json`);
   await fs.writeFile(filePath, JSON.stringify(data, null, 2));
+}
+
+// --- Congress trades ---
+
+const CONGRESS_DIR = path.join(DATA_DIR, "congress");
+
+export async function readCongressTrades(chamber: CongressChamber): Promise<CongressTrade[]> {
+  try {
+    const raw = await fs.readFile(path.join(CONGRESS_DIR, `${chamber}.json`), "utf-8");
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed as CongressTrade[];
+  } catch (err) {
+    if (isEnoent(err)) return [];
+    console.error(`[data-store] Failed to read congress trades for ${chamber}:`, err);
+    throw err;
+  }
+}
+
+export async function writeCongressTrades(chamber: CongressChamber, trades: CongressTrade[]) {
+  await ensureDir(CONGRESS_DIR);
+  await fs.writeFile(path.join(CONGRESS_DIR, `${chamber}.json`), JSON.stringify(trades, null, 2));
+}
+
+interface CongressMeta {
+  lastUpdated: string;
+  houseCount: number;
+  senateCount: number;
+}
+
+export async function readCongressMeta(): Promise<CongressMeta | null> {
+  try {
+    const raw = await fs.readFile(path.join(CONGRESS_DIR, "meta.json"), "utf-8");
+    return JSON.parse(raw) as CongressMeta;
+  } catch (err) {
+    if (isEnoent(err)) return null;
+    console.error("[data-store] Failed to read congress meta:", err);
+    return null;
+  }
+}
+
+export async function writeCongressMeta(meta: CongressMeta) {
+  await ensureDir(CONGRESS_DIR);
+  await fs.writeFile(path.join(CONGRESS_DIR, "meta.json"), JSON.stringify(meta, null, 2));
 }

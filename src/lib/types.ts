@@ -73,3 +73,31 @@ export interface PortfolioResponse {
 export interface PortfolioHistoryResponse {
   filings: FilingMeta[];
 }
+
+// --- Congress trades ---
+
+export type CongressChamber = "house" | "senate";
+export type TradeType = "purchase" | "sale" | "sale_partial" | "sale_full" | "exchange";
+
+export interface CongressTrade {
+  id: string;
+  member: string;
+  chamber: CongressChamber;
+  ticker: string | null;
+  assetDescription: string;
+  assetType: string;
+  tradeType: TradeType;
+  amount: string;
+  transactionDate: string;
+  disclosureDate: string;
+  owner: string;
+  currentPrice: number | null;
+  priceChange1M: number | null;
+}
+
+export interface CongressTradesResponse {
+  trades: CongressTrade[];
+  totalCount: number;
+  members: string[];
+  lastUpdated: string | null;
+}
