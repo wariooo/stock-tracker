@@ -1,5 +1,6 @@
 import { readCache, writeCache } from "./data-store";
 import crypto from "crypto";
+import { isAiAnalysisEnabled } from "./feature-flags";
 
 const OLLAMA_URL = process.env.OLLAMA_URL || "http://ollama.railway.internal:11434";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "phi3:mini";
@@ -10,6 +11,8 @@ function hashPrompt(prompt: string): string {
 }
 
 export async function generateAnalysis(prompt: string): Promise<string | null> {
+  if (!isAiAnalysisEnabled()) return null;
+
   const cacheKey = `ai-analysis-${hashPrompt(prompt)}`;
 
   const cached = await readCache<string>(cacheKey);

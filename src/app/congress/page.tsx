@@ -3,6 +3,7 @@ import { Header } from "@/components/header";
 import { StatCard } from "@/components/stat-card";
 import { CongressTradesTable } from "@/components/congress-trades-table";
 import { AiInsightPanel } from "@/components/ai-insight-panel";
+import { isAiAnalysisEnabled } from "@/lib/feature-flags";
 import type { CongressTrade } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +48,7 @@ export default async function CongressPage({
 
   // Extract members for filter dropdown
   const members = Array.from(new Set(allTrades.map((t) => t.member))).sort();
+  const aiAnalysisEnabled = isAiAnalysisEnabled();
 
   if (totalTrades === 0) {
     return (
@@ -75,24 +77,28 @@ export default async function CongressPage({
             value={meta?.lastUpdated ? new Date(meta.lastUpdated).toLocaleDateString() : "Never"}
           />
         </div>
-        <div className="mb-8">
-          <AiInsightPanel
-            type="congress"
-            data={{
-              totalTrades,
-              uniqueMembers,
-              topTickers: topTickerEntries.slice(0, 10).map(([t, c]) => ({ ticker: t, count: c })),
-              recentTrades: allTrades.slice(0, 20).map((t) => ({
-                member: t.member,
-                ticker: t.ticker,
-                assetDescription: t.assetDescription,
-                tradeType: t.tradeType,
-                amount: t.amount,
-                transactionDate: t.transactionDate,
-              })),
-            }}
-          />
-        </div>
+        {aiAnalysisEnabled ? (
+          <div className="mb-8">
+            <AiInsightPanel
+              type="congress"
+              data={{
+                totalTrades,
+                uniqueMembers,
+                topTickers: topTickerEntries
+                  .slice(0, 10)
+                  .map(([t, c]) => ({ ticker: t, count: c })),
+                recentTrades: allTrades.slice(0, 20).map((t) => ({
+                  member: t.member,
+                  ticker: t.ticker,
+                  assetDescription: t.assetDescription,
+                  tradeType: t.tradeType,
+                  amount: t.amount,
+                  transactionDate: t.transactionDate,
+                })),
+              }}
+            />
+          </div>
+        ) : null}
         <CongressTradesTable
           initialTrades={allTrades.slice(0, 500)}
           members={members}

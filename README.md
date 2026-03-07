@@ -1,36 +1,25 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+This is a Next.js stock tracker for SEC 13F filings and congressional trades.
 
-## Getting Started
+## Environment
 
-First, run the development server:
+- `SEC_USER_AGENT` is required for SEC requests.
+- `ENABLE_AI_ANALYSIS=false` disables the Ollama-backed AI panel.
+- Set `ENABLE_AI_ANALYSIS=true` later to re-enable it.
 
 ```bash
+export SEC_USER_AGENT="stock-tracker/1.0 (your-email@example.com)"
+export ENABLE_AI_ANALYSIS=false
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Railway note
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+If you deployed an Ollama service on Railway, disabling the feature flag in the app stops the UI and API from using it, but the separate Ollama service can still consume RAM and incur cost while running. Scale that service down or remove it in Railway to actually stop the memory spend.
 
-## Learn More
+## Re-enable later
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+export ENABLE_AI_ANALYSIS=true
+```

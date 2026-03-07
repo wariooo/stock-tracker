@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateAnalysis } from "@/lib/ollama";
+import { isAiAnalysisEnabled } from "@/lib/feature-flags";
 import type { AiAnalysisRequest, AiAnalysisResponse } from "@/lib/types";
 
 function buildStockPrompt(data: Record<string, unknown>): string {
@@ -57,6 +58,13 @@ Provide: notable trading patterns, any concentrated activity, and what the tradi
 
 export async function POST(req: NextRequest) {
   try {
+    if (!isAiAnalysisEnabled()) {
+      return NextResponse.json(
+        { analysis: null } satisfies AiAnalysisResponse,
+        { status: 503 }
+      );
+    }
+
     const body = (await req.json()) as AiAnalysisRequest;
 
     if (!body.type || !body.data) {

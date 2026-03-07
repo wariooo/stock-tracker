@@ -3,6 +3,7 @@ import { readFilings, readPositions } from "@/lib/data-store";
 import { buildPositionHistory } from "@/lib/analysis";
 import { isValidCik, DEFAULT_CIK } from "@/lib/entities";
 import { searchTicker } from "@/lib/yahoo";
+import { isAiAnalysisEnabled } from "@/lib/feature-flags";
 import { PriceChart } from "@/components/price-chart";
 import { PositionHistory } from "@/components/position-history";
 import { AiInsightPanel } from "@/components/ai-insight-panel";
@@ -68,6 +69,7 @@ export default async function StockPage({
     cusip,
     issuer
   );
+  const aiAnalysisEnabled = isAiAnalysisEnabled();
 
   return (
     <div className="min-h-screen">
@@ -91,21 +93,23 @@ export default async function StockPage({
         </div>
       </header>
       <main className="mx-auto max-w-7xl px-4 py-8 space-y-8">
-        <PriceChart ticker={ticker} />
-        <AiInsightPanel
-          type="stock"
-          data={{
-            ticker,
-            issuer,
-            history: history.map((h) => ({
-              reportDate: h.reportDate,
-              shares: h.shares,
-              valueUsd: h.valueUsd,
-              shareDelta: h.shareDelta,
-              changePct: h.changePct,
-            })),
-          }}
-        />
+        <PriceChart key={ticker} ticker={ticker} />
+        {aiAnalysisEnabled ? (
+          <AiInsightPanel
+            type="stock"
+            data={{
+              ticker,
+              issuer,
+              history: history.map((h) => ({
+                reportDate: h.reportDate,
+                shares: h.shares,
+                valueUsd: h.valueUsd,
+                shareDelta: h.shareDelta,
+                changePct: h.changePct,
+              })),
+            }}
+          />
+        ) : null}
         <div>
           <h2 className="text-lg font-semibold mb-4">Position History</h2>
           <PositionHistory entries={history} />

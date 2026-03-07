@@ -28,9 +28,11 @@ export function PriceChart({ ticker }: { ticker: string }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
-    fetch(`/api/stock/${encodeURIComponent(ticker)}?period=${periodMap[period]}`)
+    const controller = new AbortController();
+
+    fetch(`/api/stock/${encodeURIComponent(ticker)}?period=${periodMap[period]}`, {
+      signal: controller.signal,
+    })
       .then((r) => {
         if (!r.ok) throw new Error(`Failed to fetch: ${r.status}`);
         return r.json();
@@ -40,11 +42,21 @@ export function PriceChart({ ticker }: { ticker: string }) {
         setLoading(false);
       })
       .catch((e) => {
+        if (controller.signal.aborted) return;
         setError(e.message || "Failed to load price data");
         setData([]);
         setLoading(false);
       });
+
+    return () => controller.abort();
   }, [ticker, period]);
+
+  function handlePeriodChange(nextPeriod: PeriodLabel) {
+    if (nextPeriod === period) return;
+    setLoading(true);
+    setError(null);
+    setPeriod(nextPeriod);
+  }
 
   return (
     <div className="rounded-lg border border-border bg-card-bg p-5 shadow-sm">
@@ -54,7 +66,7 @@ export function PriceChart({ ticker }: { ticker: string }) {
           {PERIODS.map((p) => (
             <button
               key={p}
-              onClick={() => setPeriod(p)}
+              onClick={() => handlePeriodChange(p)}
               className={`px-3 py-1 text-xs rounded-md font-medium ${
                 period === p
                   ? "bg-accent text-white"
